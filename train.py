@@ -189,6 +189,7 @@ def main(args):
                 scaler.scale(loss).backward()
 
                 scaler.step(optimizer)
+                scaler.update()
 
                 optimizer.zero_grad()
 
