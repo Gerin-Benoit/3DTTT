@@ -9,7 +9,6 @@ import torch
 from torch import nn
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceLoss
-from monai.networks.nets import UNet
 from monai.utils import set_determinism
 import numpy as np
 import random
@@ -18,6 +17,7 @@ from data_load import get_train_dataloader, get_val_dataloader
 import wandb
 from os.path import join as pjoin
 from metrics import *
+from model import *
 
 parser = argparse.ArgumentParser(description='Get all command line arguments.')
 # trainining
@@ -98,8 +98,6 @@ def main(args):
     device = get_default_device()
     torch.multiprocessing.set_sharing_strategy('file_system')
 
-    path_save = args.save_path
-
     save_dir = f'/{args.save_path}/{args.name}'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -127,13 +125,7 @@ def main(args):
                                     cache_rate=args.cache_rate)
 
     ''' Initialise the model '''
-    model = UNet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=2,
-        channels=(32, 64, 128, 256, 512),
-        strides=(2, 2, 2, 2),
-        num_res_units=0).to(device)
+    model = UNet3D(in_channels=1, num_classes=2).to(device)
 
     print(model)
 
@@ -145,12 +137,10 @@ def main(args):
 
     epoch_num = args.n_epochs
     val_interval = args.val_interval
-    thresh = args.threshold
+    threshold = args.threshold
     gamma_focal = 2.0
     dice_weight = 0.5
     focal_weight = 1.0
-    roi_size = (96, 96, 96)
-    sw_batch_size = 4
 
     best_metric, best_metric_epoch = -1, -1
     epoch_loss_values, metric_values = [], []
@@ -228,7 +218,7 @@ def main(args):
                     val_outputs = inference(val_inputs, model)
 
                     val_outputs = act(val_outputs)[:, 1]
-                    val_outputs = torch.where(val_outputs >= args.th, torch.tensor(1.0).to(device), torch.tensor(0.0).to(device))
+                    val_outputs = torch.where(val_outputs >= threshold, torch.tensor(1.0).to(device), torch.tensor(0.0).to(device))
                     val_outputs = val_outputs.squeeze().cpu().numpy()
                     # curr_preds = thresholded_output.squeeze().cpu().numpy()[val_bms == 1]
                     # gts = val_labels.squeeze().cpu().numpy()[val_bms == 1]
