@@ -114,6 +114,7 @@ def main(args):
     val_flair_paths = [pjoin(tp, "eval_in", "flair") for tp in validation_paths]
     training_gts_path = [pjoin(tp, "train", "gt") for tp in training_paths]
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
+    val_bms_path = [pjoin(tp, "eval_in", "fg_mask") for tp in validation_paths]
 
     print(len(training_flair_paths))
 
@@ -124,6 +125,7 @@ def main(args):
                                         seed=args.seed)
     val_loader = get_val_dataloader(flair_paths=val_flair_paths,
                                     gts_paths=val_gts_path,
+                                    bm_paths=val_bms_path,
                                     num_workers=args.num_workers,
                                     cache_rate=args.cache_rate)
 
