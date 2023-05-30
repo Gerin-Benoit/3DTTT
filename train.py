@@ -48,6 +48,7 @@ parser.add_argument('--save_path', type=str, default='~/storage/msseg',
 parser.add_argument('--num_workers', type=int, default=12,
                     help='Number of workers')
 parser.add_argument('--batch_size', default=4, type=int)
+parser.add_argument('--cache_rate', default=1.0, type=float)
 # logging
 parser.add_argument('--val_interval', type=int, default=5,
                     help='Validation every n-th epochs')
@@ -102,7 +103,7 @@ def main(args):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     wandb.login()
-    wandb.init(project=args.wandb_project, entity='pilabopoulos')
+    wandb.init(project=args.wandb_project, entity='max_and_ben')
     wandb.run.name = f'{args.name}_seed_{args.seed}'
 
     training_paths = [pjoin(args.data_dir, "msseg"), pjoin(args.data_dir, "best")]
