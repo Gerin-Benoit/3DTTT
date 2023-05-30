@@ -1,13 +1,63 @@
 """
-Metrics used for validation during training and evaluation: 
+Metrics used for validation during training and evaluation:
 Dice Score, Normalised Dice score, Lesion F1 score and nDSC R-AAC.
 """
+import torch
 import numpy as np
 from functools import partial
 from scipy import ndimage
 from collections import Counter
 from joblib import Parallel, delayed
 from sklearn import metrics
+from monai.metrics import DiceMetric
+
+
+def remove_connected_components(segmentation, l_min=9):
+    """
+    Remove all lesions with less or equal amount of voxels than `l_min` from a
+    binary segmentation mask `segmentation`.
+    Args:
+      segmentation: `numpy.ndarray` of shape [H, W, D], with a binary lesions segmentation mask.
+      l_min:  `int`, minimal amount of voxels in a lesion.
+    Returns:
+      Binary lesion segmentation mask (`numpy.ndarray` of shape [H, W, D])
+      only with connected components that have more than `l_min` voxels.
+    """
+    labeled_seg, num_labels = ndimage.label(segmentation)
+    label_list = np.unique(labeled_seg)
+    num_elements_by_lesion = ndimage.labeled_comprehension(segmentation, labeled_seg, label_list, np.sum, float, 0)
+
+    seg2 = np.zeros_like(segmentation)
+    for i_el, n_el in enumerate(num_elements_by_lesion):
+        if n_el > l_min:
+            current_voxels = np.stack(np.where(labeled_seg == i_el), axis=1)
+            seg2[current_voxels[:, 0],
+                 current_voxels[:, 1],
+                 current_voxels[:, 2]] = 1
+    return seg2
+
+def dice_metric_multiclass(ground_truth, predictions):
+    """
+    format [num_samples, num_classes]
+    """
+    dice = 0
+    ground_truth = ground_truth.astype(float)
+    predictions = predictions.astype(float)
+
+    # to [num_classes, num_samples]
+    ground_truth = ground_truth.transpose()
+    predictions = predictions.transpose()
+
+    intersection = np.sum(predictions * ground_truth, axis=1)
+
+    pred_o = np.sum(predictions, axis=1)
+    gt_o = np.sum(ground_truth, axis=1)
+    den = pred_o + gt_o
+
+    out = np.where(den > 0, (2.0 * intersection) / den, 1.0)
+    out_mean = np.mean(out)
+
+    return out_mean, out
 
 
 def dice_metric(ground_truth, predictions):
@@ -37,10 +87,10 @@ def dice_metric(ground_truth, predictions):
 
 def dice_norm_metric(ground_truth, predictions):
     """
-    Compute Normalised Dice Coefficient (nDSC), 
+    Compute Normalised Dice Coefficient (nDSC),
     False positive rate (FPR),
     False negative rate (FNR) for a single example.
-    
+
     Args:
       ground_truth: `numpy.ndarray`, binary ground truth segmentation target,
                      with shape [H, W, D].
@@ -76,13 +126,13 @@ def dice_norm_metric(ground_truth, predictions):
 
 def ndsc_aac_metric(ground_truth, predictions, uncertainties, parallel_backend=None):
     """
-    Compute area above Normalised Dice Coefficient (nDSC) retention curve for 
-    one subject. `ground_truth`, `predictions`, `uncertainties` - are flattened 
+    Compute area above Normalised Dice Coefficient (nDSC) retention curve for
+    one subject. `ground_truth`, `predictions`, `uncertainties` - are flattened
     arrays of correponding 3D maps within the foreground mask only.
-    
+
     Args:
       ground_truth: `numpy.ndarray`, binary ground truth segmentation target,
-                     with shape [H * W * D]. 
+                     with shape [H * W * D].
       predictions:  `numpy.ndarray`, binary segmentation predictions,
                      with shape [H * W * D].
       uncertainties:  `numpy.ndarray`, voxel-wise uncertainties,
@@ -121,10 +171,10 @@ def ndsc_aac_metric(ground_truth, predictions, uncertainties, parallel_backend=N
     return 1. - metrics.auc(fracs_retained, dsc_norm_scores)
 
 
-def ndsc_retention_curve(ground_truth, predictions, uncertainties, fracs_retained, parallel_backend=None):
+def ndsc_retention_curve(ground_truth, predictions, uncertainties, best_ordering, fracs_retained, parallel_backend=None):
     """
     Compute Normalised Dice Coefficient (nDSC) retention curve.
-    
+
     Args:
       ground_truth: `numpy.ndarray`, binary ground truth segmentation target,
                      with shape [H * W * D].
@@ -132,7 +182,7 @@ def ndsc_retention_curve(ground_truth, predictions, uncertainties, fracs_retaine
                      with shape [H * W * D].
       uncertainties:  `numpy.ndarray`, voxel-wise uncertainties,
                      with shape [H * W * D].
-      fracs_retained:  `numpy.ndarray`, array of increasing valies of retained 
+      fracs_retained:  `numpy.ndarray`, array of increasing valies of retained
                        fractions of most certain voxels, with shape [N].
       parallel_backend: `joblib.Parallel`, for parallel computation
                      for different retention fractions.
@@ -148,25 +198,83 @@ def ndsc_retention_curve(ground_truth, predictions, uncertainties, fracs_retaine
 
     if parallel_backend is None:
         parallel_backend = Parallel(n_jobs=1)
-
     ordering = uncertainties.argsort()
+    ordering_best = best_ordering.argsort()
     gts = ground_truth[ordering].copy()
+    gts_best = ground_truth[ordering_best].copy()
     preds = predictions[ordering].copy()
+    preds_best = predictions[ordering_best].copy()
     N = len(gts)
+    N_best = len(gts_best)
+    fracs_retained_best = fracs_retained.copy()
 
     process = partial(compute_dice_norm, preds_=preds, gts_=gts, N_=N)
     dsc_norm_scores = np.asarray(
         parallel_backend(delayed(process)(frac)
                          for frac in fracs_retained)
     )
+    process_best = partial(compute_dice_norm, preds_=preds_best, gts_=gts_best, N_=N_best)
+    dsc_norm_scores_best = np.asarray(
+        parallel_backend(delayed(process_best)(frac_best)
+                         for frac_best in fracs_retained_best)
+    )
 
-    return dsc_norm_scores
+    return dsc_norm_scores, dsc_norm_scores_best
+
+
+def multi_class_dsc_retention_curve(ground_truth, predictions, uncertainties, fracs_retained, parallel_backend=None):
+    """
+    Compute Dice Coefficient (nDSC) retention curve.
+
+    Args:
+      ground_truth: `numpy.ndarray`, ground truth segmentation target,
+                     with shape [C, H * W * D].
+      predictions:  `numpy.ndarray`, segmentation predictions,
+                     with shape [C, H * W * D].
+      uncertainties:  `numpy.ndarray`, voxel-wise uncertainties,
+                     with shape [H * W * D].
+      fracs_retained:  `numpy.ndarray`, array of increasing valies of retained
+                       fractions of most certain voxels, with shape [N].
+      parallel_backend: `joblib.Parallel`, for parallel computation
+                     for different retention fractions.
+    Returns:
+      (y-axis) DSC at each point of the retention curve (`numpy.ndarray` with shape [N]).
+    """
+    num_classes = 2
+
+    def compute_dice_frac(frac_, preds_, gts_, N_):
+        pos = int(N_ * frac_)
+        curr_preds = preds_ if pos == N_ else np.concatenate(
+            (preds_[:pos, :], gts_[pos:, :]))
+        metric, metric_per_class = dice_metric_multiclass(predictions=curr_preds, ground_truth=gts_)
+
+        return metric, metric_per_class
+
+    if parallel_backend is None:
+        parallel_backend = Parallel(n_jobs=1)
+
+    ordering = uncertainties.argsort()
+    gts = ground_truth[ordering].copy()
+    gts_one_hot = np.zeros((gts.size, num_classes))
+    gts_one_hot[np.arange(gts.size).astype(int), gts.astype(int)] = 1
+    preds = predictions[ordering].copy()
+    preds_one_hot = np.zeros((preds.size, num_classes))
+    preds_one_hot[np.arange(preds.size).astype(int), preds.astype(int)] = 1
+    N = len(gts)
+
+    process = partial(compute_dice_frac, preds_=preds_one_hot, gts_=gts_one_hot, N_=N)
+    results = parallel_backend(delayed(process)(frac) for frac in fracs_retained)
+    dsc_scores, dsc_scores_per_class = zip(*results)
+    dsc_scores = np.asarray(dsc_scores)
+    dsc_scores_per_class = np.asarray(dsc_scores_per_class)
+
+    return dsc_scores, dsc_scores_per_class
 
 
 def intersection_over_union(mask1, mask2):
     """
     Compute IoU for 2 binary masks.
-    
+
     Args:
       mask1: `numpy.ndarray`, binary mask.
       mask2:  `numpy.ndarray`, binary mask of the same shape as `mask1`.
@@ -179,13 +287,13 @@ def intersection_over_union(mask1, mask2):
 def lesion_f1_score(ground_truth, predictions, IoU_threshold=0.25, parallel_backend=None):
     """
     Compute lesion-scale F1 score.
-    
+
     Args:
       ground_truth: `numpy.ndarray`, binary ground truth segmentation target,
                      with shape [H, W, D].
       predictions:  `numpy.ndarray`, binary segmentation predictions,
                      with shape [H, W, D].
-      IoU_threshold: `float` in [0.0, 1.0], IoU threshold for max IoU between 
+      IoU_threshold: `float` in [0.0, 1.0], IoU threshold for max IoU between
                      predicted and ground truth lesions to classify them as
                      TP, FP or FN.
       parallel_backend: `joblib.Parallel`, for parallel computation
@@ -249,3 +357,25 @@ def lesion_f1_score(ground_truth, predictions, IoU_threshold=0.25, parallel_back
     f1 = 1.0 if tp + 0.5 * (fp + fn) == 0.0 else tp / (tp + 0.5 * (fp + fn))
 
     return f1
+
+
+if __name__ == "__main__":
+    import numpy as np
+
+
+    def generate_data(size):
+        ground_truth = np.random.randint(0, 2, size)
+        predictions = np.random.randint(0, 2, size)
+        uncertainties = np.random.rand(*size).flatten()
+        best_ordering = np.random.rand(*size).flatten()
+        fracs_retained = np.linspace(0, 1, 11)
+        return ground_truth.flatten(), predictions.flatten(), uncertainties, best_ordering, fracs_retained
+
+
+    ground_truth, predictions, uncertainties, best_ordering, fracs_retained = generate_data((10, 10, 10))
+
+    dsc_norm_scores, dsc_norm_scores_best = ndsc_retention_curve(ground_truth, predictions, uncertainties,
+                                                                 best_ordering, fracs_retained)
+    print(fracs_retained)
+    print(dsc_norm_scores[-1])
+    print(dsc_norm_scores_best[-1])
