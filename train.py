@@ -40,9 +40,9 @@ parser.add_argument('--path_val_gts', type=str, required=True,
                     help='Specify the path to the validation gts files directory')
 '''
 
-parser.add_argument('--data_dir', type=str, default='~/storage/data/shift_dataset',
+parser.add_argument('--data_dir', type=str, default='/dir/GrBM/gerinb/data/shift_dataset',
                     help='Specify the path to the data files directory')
-parser.add_argument('--save_path', type=str, default='~/storage/msseg',
+parser.add_argument('--save_path', type=str, default='/dir/GrBM/gerinb/msseg',
                     help='Specify the path to the save directory')
 
 parser.add_argument('--num_workers', type=int, default=12,
