@@ -98,7 +98,7 @@ def main(args):
     device = get_default_device()
     torch.multiprocessing.set_sharing_strategy('file_system')
 
-    save_dir = f'/{args.save_path}/{args.name}'
+    save_dir = f'{args.save_path}/{args.name}'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     wandb.login()
