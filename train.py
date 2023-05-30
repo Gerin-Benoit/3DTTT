@@ -106,14 +106,16 @@ def main(args):
     wandb.init(project=args.wandb_project, entity='max_and_ben')
     wandb.run.name = f'{args.name}_seed_{args.seed}'
 
-    training_paths = [pjoin(args.data_dir, "msseg"), pjoin(args.data_dir, "best")]
-    validation_paths = [pjoin(args.data_dir, "msseg"), pjoin(args.data_dir, "best")]
+    training_paths = [pjoin(args.data_dir, "msseg")]#, pjoin(args.data_dir, "best")]
+    validation_paths = [pjoin(args.data_dir, "msseg")]#, pjoin(args.data_dir, "best")]
 
     '''' Initialize dataloaders '''
     training_flair_paths = [pjoin(tp, "train", "flair") for tp in training_paths]
     val_flair_paths = [pjoin(tp, "eval_in", "flair") for tp in validation_paths]
     training_gts_path = [pjoin(tp, "train", "gt") for tp in training_paths]
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
+
+    print(len(training_flair_paths))
 
     train_loader = get_train_dataloader(flair_paths=training_flair_paths,
                                         gts_paths=training_gts_path,
