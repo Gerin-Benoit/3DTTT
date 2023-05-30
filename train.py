@@ -162,11 +162,11 @@ def main(args):
         for batch_data in train_loader:
             n_samples = batch_data["image"].size(0)
             for m in range(0, batch_data["image"].size(0), args.batch_size):
-                step += 2
+                step += args.batch_size
                 inputs, labels = (
                     batch_data["image"][m:(m + 2)].to(device),
                     batch_data["label"][m:(m + 2)].type(torch.LongTensor).to(device))
-                optimizer.zero_grad()
+
                 with torch.cuda.amp.autocast():
                     outputs = model(inputs)
 
@@ -180,15 +180,18 @@ def main(args):
                     loss2 = torch.mean(loss2)
                     loss = dice_weight * loss1 + focal_weight * loss2
 
-                scaler.scale(loss).backward()
+
 
                 epoch_loss += loss.item()
                 epoch_loss_ce += loss2.item()
                 epoch_loss_dice += loss1.item()
 
+                scaler.scale(loss).backward()
+
                 scaler.step(optimizer)
 
-                epoch_loss += loss.item()
+                optimizer.zero_grad()
+
                 if step % 100 == 0:
                     step_print = int(step / args.batch_size)
                     print(
