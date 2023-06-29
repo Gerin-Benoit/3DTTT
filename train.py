@@ -7,8 +7,11 @@ import argparse
 import os
 import torch
 from torch import nn
+from monai.data import decollate_batch
+from monai.transforms import Compose, AsDiscrete
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceLoss
+from monai.metrics import DiceMetric
 from monai.utils import set_determinism
 import numpy as np
 import random
@@ -21,7 +24,7 @@ from model import *
 
 parser = argparse.ArgumentParser(description='Get all command line arguments.')
 # trainining
-parser.add_argument('--learning_rate', type=float, default=1e-5,
+parser.add_argument('--learning_rate', type=float, default=1e-4,
                     help='Specify the initial learning rate')
 parser.add_argument('--n_epochs', type=int, default=300,
                     help='Specify the number of epochs to train for')
@@ -42,6 +45,9 @@ parser.add_argument('--path_val_gts', type=str, required=True,
 
 parser.add_argument('--data_dir', type=str, default='/dir/GrBM/gerinb/data/shift_dataset',
                     help='Specify the path to the data files directory')
+
+parser.add_argument('--I', nargs='+', default=['FLAIR'], choices=['FLAIR', 'T2', 'T1', 'T1ce', 'PD'])
+
 parser.add_argument('--save_path', type=str, default='/dir/GrBM/gerinb/msseg',
                     help='Specify the path to the save directory')
 
@@ -67,7 +73,7 @@ def inference(input, model):
         return sliding_window_inference(
             inputs=input,
             roi_size=roi_size,
-            sw_batch_size=6,
+            sw_batch_size=2,
             predictor=model,
             overlap=0.5,
         )
@@ -88,6 +94,9 @@ def get_default_device():
         return torch.device('cpu')
 
 
+post_trans = Compose(
+    [AsDiscrete(argmax=True, to_onehot=2)]
+)
 def main(args):
     seed_val = args.seed
     random.seed(seed_val)
@@ -116,7 +125,6 @@ def main(args):
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
     val_bms_path = [pjoin(tp, "eval_in", "fg_mask") for tp in validation_paths]
 
-    print(len(training_flair_paths))
 
     train_loader = get_train_dataloader(flair_paths=training_flair_paths,
                                         gts_paths=training_gts_path,
@@ -137,7 +145,10 @@ def main(args):
     loss_function = DiceLoss(to_onehot_y=True,
                              softmax=True, sigmoid=False,
                              include_background=False)
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.0005)
+
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.n_epochs, eta_min=1e-6)
+
     act = nn.Softmax(dim=1)
 
     epoch_num = args.n_epochs
@@ -147,8 +158,11 @@ def main(args):
     dice_weight = 0.5
     focal_weight = 1.0
 
-    best_metric, best_metric_epoch = -1, -1
-    epoch_loss_values, metric_values = [], []
+    dice_metric = DiceMetric(include_background=False, reduction="mean")
+    best_metric_nDSC, best_metric_epoch_nDSC = -1, -1
+    best_metric_DSC, best_metric_epoch_DSC = -1, -1
+
+    epoch_loss_values, metric_values_nDSC, metric_values_DSC = [], [], []
 
     scaler = torch.cuda.amp.GradScaler()
 
@@ -182,8 +196,6 @@ def main(args):
                     loss2 = torch.mean(loss2)
                     loss = dice_weight * loss1 + focal_weight * loss2
 
-
-
                 epoch_loss += loss.item()
                 epoch_loss_ce += loss2.item()
                 epoch_loss_dice += loss1.item()
@@ -207,6 +219,8 @@ def main(args):
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
         current_lr = optimizer.param_groups[0]['lr']
+        lr_scheduler.step()
+
         wandb.log(
             {'Total Loss/train': epoch_loss, 'Dice Loss/train': epoch_loss_dice, 'Focal Loss/train': epoch_loss_ce,
              'Learning rate': current_lr, },  # 'Dice Metric/train': metric},
@@ -226,6 +240,10 @@ def main(args):
 
                     val_outputs = inference(val_inputs, model)
 
+                    for_dice_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
+
+                    dice_metric(y_pred=for_dice_outputs, y=val_labels)
+
                     val_outputs = act(val_outputs)[:, 1]
                     val_outputs = torch.where(val_outputs >= threshold, torch.tensor(1.0).to(device), torch.tensor(0.0).to(device))
                     val_outputs = val_outputs.squeeze().cpu().numpy()
@@ -236,18 +254,30 @@ def main(args):
                     nDSC_list.append(nDSC)
 
                 torch.cuda.empty_cache()
-                del val_inputs, val_labels, val_outputs, val_bms  # , thresholded_output, curr_preds, gts , val_bms
-                metric = np.mean(nDSC_list)
-                wandb.log({'nDSC Metric/val': metric}, step=epoch)
-                metric_values.append(metric)
-                if metric > best_metric:
-                    best_metric = metric
-                    best_metric_epoch = epoch + 1
-                    save_path = os.path.join(save_dir, f"best_{args.name}_seed{args.seed}.pth")
+                del val_inputs, val_labels, val_outputs, val_bms, for_dice_outputs  # , thresholded_output, curr_preds, gts , val_bms
+                metric_nDSC = np.mean(nDSC_list)
+                metric_DSC = dice_metric.aggregate().item()
+                wandb.log({'nDSC Metric/val': metric_nDSC, 'DSC Metric/val': metric_DSC}, step=epoch)
+                metric_values_nDSC.append(metric_nDSC)
+                metric_values_DSC.append(metric_DSC)
+
+                if metric_nDSC > best_metric_nDSC:
+                    best_metric_nDSC = metric_nDSC
+                    best_metric_epoch_nDSC = epoch + 1
+                    save_path = os.path.join(save_dir, f"best_nDSC_{args.name}_seed{args.seed}.pth")
                     torch.save(model.state_dict(), save_path)
-                    print("saved new best metric model")
-                print(f"current epoch: {epoch + 1} current mean dice: {metric:.4f}"
-                      f"\nbest mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}"
+                    print("saved new best metric model for nDSC")
+
+                if metric_DSC > best_metric_DSC:
+                    best_metric_DSC = metric_DSC
+                    best_metric_epoch_DSC = epoch + 1
+                    save_path = os.path.join(save_dir, f"best_DSC_{args.name}_seed{args.seed}.pth")
+                    torch.save(model.state_dict(), save_path)
+                    print("saved new best metric model for DSC")
+
+                print(f"current epoch: {epoch + 1} current mean normalized dice: {metric_nDSC:.4f}"
+                      f"\nbest mean normalized dice: {best_metric_nDSC:.4f} at epoch: {best_metric_epoch_nDSC}"
+                      f"\nbest normalized dice: {best_metric_DSC:.4f} at epoch: {best_metric_epoch_DSC}"
                       )
 
 
