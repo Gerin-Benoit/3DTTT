@@ -14,7 +14,7 @@ from monai.transforms import (
 from scipy import ndimage
 
 
-def get_train_transforms(I=['FLAIR']):
+def     get_train_transforms(I=['FLAIR']):
     """ Get transforms for training on FLAIR images and ground truth:
     - Loads 3D images from Nifti file
     - Adds channel dimention
@@ -42,7 +42,7 @@ def get_train_transforms(I=['FLAIR']):
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 1)),
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(1, 2)),
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 2)),
-            RandAffined(keys=I+['label'], mode=('bilinear', 'nearest'),
+            RandAffined(keys=I+["label"], mode=('bilinear', 'nearest'),
                         prob=1.0, spatial_size=(96, 96, 96),
                         rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
                         scale_range=(0.1, 0.1, 0.1), padding_mode='border'),
@@ -154,7 +154,7 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
         files.append(file_dict)
 
     print("Number of training files:", len(files))
-
+    print(I)
     train_transforms = get_train_transforms(I)
     ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=True,  num_workers=num_workers)
