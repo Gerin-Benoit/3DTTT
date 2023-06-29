@@ -282,7 +282,7 @@ def main(args):
 
                 print(f"current epoch: {epoch + 1} current mean normalized dice: {metric_nDSC:.4f}"
                       f"\nbest mean normalized dice: {best_metric_nDSC:.4f} at epoch: {best_metric_epoch_nDSC}"
-                      f"\nbest normalized dice: {best_metric_DSC:.4f} at epoch: {best_metric_epoch_DSC}"
+                      f"\nbest mean dice: {best_metric_DSC:.4f} at epoch: {best_metric_epoch_DSC}"
                       )
 
 

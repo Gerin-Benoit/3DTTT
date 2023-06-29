@@ -10,7 +10,7 @@ from monai.transforms import (
     AddChanneld, Compose, LoadImaged, RandCropByPosNegLabeld,
     Spacingd, ToTensord, NormalizeIntensityd, RandFlipd,
     RandRotate90d, RandShiftIntensityd, RandAffined, RandSpatialCropd,
-    RandScaleIntensityd, RandSpatialCropSamplesd)
+    RandScaleIntensityd, RandSpatialCropSamplesd, ApplyTransformToKey)
 from scipy import ndimage
 
 
@@ -26,26 +26,31 @@ def get_train_transforms():
     transform = Compose(
         [
             LoadImaged(keys=["image", "label"]),
-            AddChanneld(keys=["image", "label"]),
-            NormalizeIntensityd(keys=["image"], nonzero=True),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
+            ApplyTransformToKey(keys=["image"], transform=AddChanneld(keys="image")),
+            ApplyTransformToKey(keys=["image"], transform=NormalizeIntensityd(keys="image", nonzero=True)),
+            ApplyTransformToKey(keys=["image"], transform=RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0)),
+            ApplyTransformToKey(keys=["image"], transform=RandScaleIntensityd(keys="image", factors=0.1, prob=1.0)),
             RandCropByPosNegLabeld(keys=["image", "label"],
                                    label_key="label", image_key="image",
                                    spatial_size=(128, 128, 128), num_samples=32,
                                    pos=4, neg=1),
-            RandSpatialCropd(keys=["image", "label"],
-                             roi_size=(96, 96, 96),
-                             random_center=True, random_size=False),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=(0, 1, 2)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 1)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(1, 2)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 2)),
-            RandAffined(keys=['image', 'label'], mode=('bilinear', 'nearest'),
-                        prob=1.0, spatial_size=(96, 96, 96),
-                        rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
-                        scale_range=(0.1, 0.1, 0.1), padding_mode='border'),
-            ToTensord(keys=["image", "label"]),
+            ApplyTransformToKey(keys=["image"], transform=RandSpatialCropd(keys="image",
+                                                                           roi_size=(96, 96, 96),
+                                                                           random_center=True, random_size=False)),
+            ApplyTransformToKey(keys=["image", "label"],
+                                transform=RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=(0, 1, 2))),
+            ApplyTransformToKey(keys=["image", "label"],
+                                transform=RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 1))),
+            ApplyTransformToKey(keys=["image", "label"],
+                                transform=RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(1, 2))),
+            ApplyTransformToKey(keys=["image", "label"],
+                                transform=RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 2))),
+            ApplyTransformToKey(keys=['image', 'label'],
+                                transform=RandAffined(keys=['image', 'label'], mode=('bilinear', 'nearest'),
+                                                      prob=1.0, spatial_size=(96, 96, 96),
+                                                      rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
+                                                      scale_range=(0.1, 0.1, 0.1), padding_mode='border')),
+            ApplyTransformToKey(keys=["image", "label"], transform=ToTensord(keys=["image", "label"])),
         ]
     )
     # transform.set_random_state(seed=seed)
@@ -99,11 +104,12 @@ def get_val_transforms(keys=["image", "label"], image_keys=["image"]):
     return Compose(
         [
             LoadImaged(keys=keys),
-            AddChanneld(keys=keys),
-            NormalizeIntensityd(keys=image_keys, nonzero=True),
-            ToTensord(keys=keys),
+            ApplyTransformToKey(keys=image_keys, transform=AddChanneld(keys=image_keys)),
+            ApplyTransformToKey(keys=image_keys, transform=NormalizeIntensityd(keys=image_keys, nonzero=True)),
+            ApplyTransformToKey(keys=keys, transform=ToTensord(keys=keys)),
         ]
-    )
+        )
+
 
 
 def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, seed=1, I=['FLAIR']):
