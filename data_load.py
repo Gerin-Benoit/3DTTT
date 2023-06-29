@@ -135,6 +135,7 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
 
     # Collect all corresponding ground truths
     segs = []
+    print(gts_paths)
     if isinstance(gts_paths, list):
         for path in gts_paths:
             segs += sorted(glob(os.path.join(path, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
