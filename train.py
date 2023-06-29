@@ -121,13 +121,13 @@ def main(args):
     validation_paths = [pjoin(args.data_dir, "msseg")]  # , pjoin(args.data_dir, "best")]
 
     '''' Initialize dataloaders '''
-    training_paths = [pjoin(tp, "train") for tp in training_paths]
+    train_paths = [pjoin(tp, "train") for tp in training_paths]
     val_paths = [pjoin(tp, "eval_in") for tp in validation_paths]
     training_gts_path = [pjoin(tp, "train", "gt") for tp in training_paths]
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
     val_bms_path = [pjoin(tp, "eval_in", "fg_mask") for tp in validation_paths]
 
-    train_loader = get_train_dataloader(scan_paths=training_paths,
+    train_loader = get_train_dataloader(scan_paths=train_paths,
                                         gts_paths=training_gts_path,
                                         num_workers=args.num_workers,
                                         cache_rate=args.cache_rate,
