@@ -127,17 +127,18 @@ def main(args):
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
     val_bms_path = [pjoin(tp, "eval_in", "fg_mask") for tp in validation_paths]
 
-    train_loader = get_train_dataloader(flair_paths=training_paths,
+    train_loader = get_train_dataloader(scan_paths=training_paths,
                                         gts_paths=training_gts_path,
                                         num_workers=args.num_workers,
                                         cache_rate=args.cache_rate,
                                         seed=args.seed,
                                         I=args.I)
-    val_loader = get_val_dataloader(flair_paths=val_paths,
+    val_loader = get_val_dataloader(scan_paths=val_paths,
                                     gts_paths=val_gts_path,
                                     bm_paths=val_bms_path,
                                     num_workers=args.num_workers,
-                                    cache_rate=args.cache_rate)
+                                    cache_rate=args.cache_rate,
+                                    I=args.I)
 
     ''' Initialise the model '''
 
