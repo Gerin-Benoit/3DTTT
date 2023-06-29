@@ -14,7 +14,7 @@ from monai.transforms import (
 from scipy import ndimage
 
 
-def     get_train_transforms(I=['FLAIR']):
+def get_train_transforms(I=['FLAIR']):
     """ Get transforms for training on FLAIR images and ground truth:
     - Loads 3D images from Nifti file
     - Adds channel dimention
@@ -92,19 +92,20 @@ def get_ssl_transforms(I=['FLAIR']):
     return transform
 
 
-def get_val_transforms(I=['FLAIR']): #keys=["image", "label"], image_keys=["image"]):
+def get_val_transforms(I=['FLAIR'], bm=True): #keys=["image", "label"], image_keys=["image"]):
     """ Get transforms for testing on FLAIR images and ground truth:
     - Loads 3D images and masks from Nifti file
     - Adds channel dimention
     - Applies intensity normalisation to scans
     - Converts to torch.Tensor()
     """
+    other_keys = ["label", "brain_mask"] if bm else ["label"]
     return Compose(
         [
-            LoadImaged(keys=I+["label"]),
-            AddChanneld(keys=I+["label"]),
+            LoadImaged(keys=I+other_keys),
+            AddChanneld(keys=I+other_keys),
             NormalizeIntensityd(keys=I, nonzero=True),
-            ToTensord(keys=I+["label"]),
+            ToTensord(keys=I+other_keys),
             ConcatItemsd(keys=I, name="image", dim=0)
         ]
     )
@@ -215,7 +216,7 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
                 file_dict[modality] = all_modality_images[modality][i]
             files.append(file_dict)
 
-        val_transforms = get_val_transforms(I)
+        val_transforms = get_val_transforms(I, bm=True)
     else:
         assert len(all_modality_images[I[0]]) == len(segs), f"Some files must be missing: {[len(all_modality_images[I[0]]), len(segs)]}"
 
@@ -226,7 +227,7 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
                 file_dict[modality] = all_modality_images[modality][i]
             files.append(file_dict)
 
-        val_transforms = get_val_transforms(I)
+        val_transforms = get_val_transforms(I, bm=False)
 
     print("Number of validation files:", len(files))
 
