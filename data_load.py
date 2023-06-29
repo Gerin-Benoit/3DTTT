@@ -23,7 +23,7 @@ def get_train_transforms():
     - Crops out 32 patches of shape [96, 96, 96] that contain lesions
     - Converts to torch.Tensor()
     """
-    transform= Compose(
+    transform = Compose(
         [
             LoadImaged(keys=["image", "label"]),
             AddChanneld(keys=["image", "label"]),
@@ -48,9 +48,10 @@ def get_train_transforms():
             ToTensord(keys=["image", "label"]),
         ]
     )
-    #transform.set_random_state(seed=seed)
+    # transform.set_random_state(seed=seed)
 
     return transform
+
 
 def get_ssl_transforms():
     """ Get transforms for training on FLAIR images :
@@ -61,7 +62,7 @@ def get_ssl_transforms():
     - Crops out 32 patches of shape [96, 96, 96] that contain lesions
     - Converts to torch.Tensor()
     """
-    transform= Compose(
+    transform = Compose(
         [
             LoadImaged(keys=["image"]),
             AddChanneld(keys=["image"]),
@@ -70,8 +71,8 @@ def get_ssl_transforms():
             RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
             RandSpatialCropSamplesd(keys=["image"],
                                     num_samples=32,
-                             roi_size=(96, 96, 96),
-                             random_center=True, random_size=False),
+                                    roi_size=(96, 96, 96),
+                                    random_center=True, random_size=False),
             RandFlipd(keys=["image"], prob=0.5, spatial_axis=(0, 1, 2)),
             RandRotate90d(keys=["image"], prob=0.5, spatial_axes=(0, 1)),
             RandRotate90d(keys=["image"], prob=0.5, spatial_axes=(1, 2)),
@@ -83,11 +84,9 @@ def get_ssl_transforms():
             ToTensord(keys=["image"]),
         ]
     )
-    #transform.set_random_state(seed=seed)
+    # transform.set_random_state(seed=seed)
 
     return transform
-
-
 
 
 def get_val_transforms(keys=["image", "label"], image_keys=["image"]):
@@ -107,27 +106,92 @@ def get_val_transforms(keys=["image", "label"], image_keys=["image"]):
     )
 
 
-def get_train_dataloader(flair_paths, gts_paths, num_workers, cache_rate=0.1, seed=1):
+def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, seed=1, I=['FLAIR']):
     """
     Get dataloader for training
     Args:
-      flair_path: `str`, path to directory with FLAIR images from Train set.
+      scan_paths: `str`, path to directory with different modality images from Train set.
       gts_path:  `str`, path to directory with ground truth lesion segmentation
                     binary masks images from Train set.
       num_workers:  `int`,  number of worker threads to use for parallel processing
                     of images
       cache_rate:  `float` in (0.0, 1.0], percentage of cached data in total.
+      I: `list`, list of modalities to include in the data loader.
     Returns:
       monai.data.DataLoader() class object.
     """
-    # Collect all flair images sorted
-    flair = []
-    assert type(flair_paths) == type(gts_paths), "flair_paths and gts_paths must be of the same type"
-    if isinstance(flair_paths, list):
-        for path in flair_paths:
-            flair += sorted(glob(os.path.join(path, "*.nii.gz")),   key=lambda i: int(re.sub('\D', '', i)))
+    # Collect all modality images sorted
+    images = []
+    # assert type(scan_paths) == type(gts_paths), "scan_paths and gts_paths must be of the same type"
+    for modality in I:
+        modality_images = []
+        modality_path = os.path.join(scan_paths, modality.lower())
+        if isinstance(scan_paths, list):
+            for path in modality_path:
+                modality_images += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        else:
+            modality_images = sorted(glob(os.path.join(modality_path, "*.nii.gz")),
+                                     key=lambda i: int(re.sub('\D', '', i)))
+        images.append(modality_images)
+
+    # Check all modalities have same length
+    assert all(len(x) == len(images[0]) for x in images), "All modalities must have the same number of images"
+
+    # Collect all corresponding ground truths
+    segs = []
+    if isinstance(gts_paths, list):
+        for path in gts_paths:
+            segs += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+    elif gts_paths is not None:
+        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+
+    if gts_paths is None:
+        files = [{"image": img} for img in zip(*images)]
     else:
-        flair = sorted(glob(os.path.join(flair_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        print(len(images[0]), len(segs))
+        assert len(images[0]) == len(segs), "Number of images and ground truths must be the same"
+        files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
+
+    print("Number of training files:", len(files))
+
+    train_transforms = get_train_transforms()
+    train_transforms.set_random_state(seed)
+    ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
+    return DataLoader(ds, batch_size=1, shuffle=True, num_workers=num_workers)
+
+
+def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_paths=None, I=['FLAIR']):
+    """
+    Get dataloader for validation and testing. Either with or without brain masks.
+
+    Args:
+      scan_paths: `str`, path to directory with different modality images.
+      gts_path:  `str`, path to directory with ground truth lesion segmentation
+                    binary masks images.
+      num_workers:  `int`,  number of worker threads to use for parallel processing
+                    of images
+      cache_rate:  `float` in (0.0, 1.0], percentage of cached data in total.
+      bm_path:   `None|str`. If `str`, then defines path to directory with
+                 brain masks. If `None`, dataloader does not return brain masks.
+      I: `list`, list of modalities to include in the data loader.
+    Returns:
+      monai.data.DataLoader() class object.
+    """
+    # Collect all modality images sorted
+    images = []
+    assert type(scan_paths) == type(gts_paths), "scan_paths and gts_paths must be of the same type"
+    for modality in I:
+        modality_images = []
+        modality_path = os.path.join(scan_paths, modality.lower())
+        if isinstance(scan_paths, list):
+            for path in modality_path:
+                modality_images += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        else:
+            modality_images = sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        images.append(modality_images)
+
+    # Check all modalities have same length
+    assert all(len(x) == len(images[0]) for x in images), "All modalities must have the same number of images"
 
     # Collect all corresponding ground truths
     segs = []
@@ -137,57 +201,6 @@ def get_train_dataloader(flair_paths, gts_paths, num_workers, cache_rate=0.1, se
     elif gts_paths is not None:
         segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
 
-    if gts_paths is None:
-        files = [{"image": fl} for fl in flair]
-    else:
-        print(len(flair),len(segs))
-        assert len(flair) == len(segs), "Number of FLAIR images and ground truths must be the same"
-        files = [{"image": fl, "label": seg} for fl, seg in zip(flair, segs)]
-
-    print("Number of training files:", len(files))
-
-    train_transforms = get_train_transforms()
-    train_transforms.set_random_state(seed)
-    ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
-    return DataLoader(ds, batch_size=1, shuffle=True,  num_workers=num_workers)
-
-
-def get_val_dataloader(flair_paths, gts_paths, num_workers, cache_rate=0.1, bm_paths=None):
-    """
-    Get dataloader for validation and testing. Either with or without brain masks.
-
-    Args:
-      flair_path: `str`, path to directory with FLAIR images.
-      gts_path:  `str`, path to directory with ground truth lesion segmentation
-                    binary masks images.
-      num_workers:  `int`,  number of worker threads to use for parallel processing
-                    of images
-      cache_rate:  `float` in (0.0, 1.0], percentage of cached data in total.
-      bm_path:   `None|str`. If `str`, then defines path to directory with
-                 brain masks. If `None`, dataloader does not return brain masks.
-    Returns:
-      monai.data.DataLoader() class object.
-    """
-    if not (type(flair_paths) == type(gts_paths)):
-        raise ValueError("flair_path, gts_path must be the same type. Got {} and {}".format(type(flair_paths), type(gts_paths)))
-    if bm_paths is not None and not (type(flair_paths) == type(bm_paths)):
-        raise ValueError("flair_path and bm_path must be all the same type. Got {} and {}".format(type(flair_paths), type(bm_paths)))
-
-    # Collect all flair images sorted
-    flair = []
-    if isinstance(flair_paths, list):
-        for path in flair_paths:
-            flair += sorted(glob(os.path.join(path, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
-    else:
-        flair = sorted(glob(os.path.join(flair_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-
-    segs = []
-    if isinstance(gts_paths, list):
-        for path in gts_paths:
-            segs += sorted(glob(os.path.join(path, "*gt*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
-    else:
-        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-
     if bm_paths is not None:
         bms = []
         if isinstance(bm_paths, list):
@@ -196,18 +209,18 @@ def get_val_dataloader(flair_paths, gts_paths, num_workers, cache_rate=0.1, bm_p
         else:
             bms = sorted(glob(os.path.join(bm_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
 
-        assert len(flair) == len(segs) == len(bms), f"Some files must be missing: {[len(flair), len(segs), len(bms)]}"
+        assert len(images[0]) == len(segs) == len(bms), f"Some files must be missing: {[len(images[0]), len(segs), len(bms)]}"
 
         files = [
-            {"image": fl, "label": seg, "brain_mask": bm} for fl, seg, bm
-            in zip(flair, segs, bms)
+            {"image": img, "label": seg, "brain_mask": bm} for img, seg, bm
+            in zip(zip(*images), segs, bms)
         ]
 
         val_transforms = get_val_transforms(keys=["image", "label", "brain_mask"])
     else:
-        assert len(flair) == len(segs), f"Some files must be missing: {[len(flair), len(segs)]}"
+        assert len(images[0]) == len(segs), f"Some files must be missing: {[len(images[0]), len(segs)]}"
 
-        files = [{"image": fl, "label": seg} for fl, seg in zip(flair, segs)]
+        files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
 
         val_transforms = get_val_transforms()
 
@@ -215,6 +228,7 @@ def get_val_dataloader(flair_paths, gts_paths, num_workers, cache_rate=0.1, bm_p
 
     ds = CacheDataset(data=files, transform=val_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=False, num_workers=num_workers)
+
 
 
 def get_flair_dataloader(flair_path, num_workers, cache_rate=0.1, batch_size=1, bm_path=None, ssl=False, seed=None):

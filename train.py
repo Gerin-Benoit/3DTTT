@@ -97,6 +97,8 @@ def get_default_device():
 post_trans = Compose(
     [AsDiscrete(argmax=True, to_onehot=2)]
 )
+
+
 def main(args):
     seed_val = args.seed
     random.seed(seed_val)
@@ -115,30 +117,31 @@ def main(args):
     wandb.init(project=args.wandb_project, entity='max_and_ben')
     wandb.run.name = f'{args.name}_seed_{args.seed}'
 
-    training_paths = [pjoin(args.data_dir, "msseg")]#, pjoin(args.data_dir, "best")]
-    validation_paths = [pjoin(args.data_dir, "msseg")]#, pjoin(args.data_dir, "best")]
+    training_paths = [pjoin(args.data_dir, "msseg")]  # , pjoin(args.data_dir, "best")]
+    validation_paths = [pjoin(args.data_dir, "msseg")]  # , pjoin(args.data_dir, "best")]
 
     '''' Initialize dataloaders '''
-    training_flair_paths = [pjoin(tp, "train", "flair") for tp in training_paths]
-    val_flair_paths = [pjoin(tp, "eval_in", "flair") for tp in validation_paths]
+    training_paths = [pjoin(tp, "train") for tp in training_paths]
+    val_paths = [pjoin(tp, "eval_in") for tp in validation_paths]
     training_gts_path = [pjoin(tp, "train", "gt") for tp in training_paths]
     val_gts_path = [pjoin(tp, "eval_in", "gt") for tp in validation_paths]
     val_bms_path = [pjoin(tp, "eval_in", "fg_mask") for tp in validation_paths]
 
-
-    train_loader = get_train_dataloader(flair_paths=training_flair_paths,
+    train_loader = get_train_dataloader(flair_paths=training_paths,
                                         gts_paths=training_gts_path,
                                         num_workers=args.num_workers,
                                         cache_rate=args.cache_rate,
-                                        seed=args.seed)
-    val_loader = get_val_dataloader(flair_paths=val_flair_paths,
+                                        seed=args.seed,
+                                        I=args.I)
+    val_loader = get_val_dataloader(flair_paths=val_paths,
                                     gts_paths=val_gts_path,
                                     bm_paths=val_bms_path,
                                     num_workers=args.num_workers,
                                     cache_rate=args.cache_rate)
 
     ''' Initialise the model '''
-    model = UNet3D(in_channels=1, num_classes=2).to(device)
+
+    model = UNet3D(in_channels=len(args.I), num_classes=2).to(device)
 
     print(model)
 
@@ -245,7 +248,8 @@ def main(args):
                     dice_metric(y_pred=for_dice_outputs, y=val_labels)
 
                     val_outputs = act(val_outputs)[:, 1]
-                    val_outputs = torch.where(val_outputs >= threshold, torch.tensor(1.0).to(device), torch.tensor(0.0).to(device))
+                    val_outputs = torch.where(val_outputs >= threshold, torch.tensor(1.0).to(device),
+                                              torch.tensor(0.0).to(device))
                     val_outputs = val_outputs.squeeze().cpu().numpy()
                     # curr_preds = thresholded_output.squeeze().cpu().numpy()[val_bms == 1]
                     # gts = val_labels.squeeze().cpu().numpy()[val_bms == 1]
