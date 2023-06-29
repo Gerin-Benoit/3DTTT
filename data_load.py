@@ -42,7 +42,7 @@ def     get_train_transforms(I=['FLAIR']):
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 1)),
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(1, 2)),
             RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 2)),
-            RandAffined(keys=I+["label"], mode=('bilinear', 'nearest'),
+            RandAffined(keys=I+["label"], mode=tuple(['bilinear'] * len(I)) + ('nearest',),
                         prob=1.0, spatial_size=(96, 96, 96),
                         rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
                         scale_range=(0.1, 0.1, 0.1), padding_mode='border'),
