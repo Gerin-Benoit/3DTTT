@@ -27,12 +27,12 @@ def     get_train_transforms(I=['FLAIR']):
     transform = Compose(
         [
             LoadImaged(keys=I+["label"]),
-            #AddChanneld(keys=I+["label"]),
+            AddChanneld(keys=I+["label"]),
             NormalizeIntensityd(keys=I, nonzero=True),
             RandShiftIntensityd(keys=I, offsets=0.1, prob=1.0),
             RandScaleIntensityd(keys=I, factors=0.1, prob=1.0),
             RandCropByPosNegLabeld(keys=I+["label"],
-                                   label_key="label", image_key=I[0],
+                                   label_key="label", image_key=I,
                                    spatial_size=(128, 128, 128), num_samples=32,
                                    pos=4, neg=1),
             RandSpatialCropd(keys=I+["label"],
