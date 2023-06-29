@@ -154,7 +154,6 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
         files.append(file_dict)
 
     print("Number of training files:", len(files))
-    print(I)
     train_transforms = get_train_transforms(I)
     ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=True,  num_workers=num_workers)
@@ -215,7 +214,7 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
                 file_dict[modality] = all_modality_images[modality][i]
             files.append(file_dict)
 
-        val_transforms = get_val_transforms(keys=I + ["label", "brain_mask"])
+        val_transforms = get_val_transforms(I)
     else:
         assert len(all_modality_images[I[0]]) == len(segs), f"Some files must be missing: {[len(all_modality_images[I[0]]), len(segs)]}"
 
