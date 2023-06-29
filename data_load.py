@@ -10,11 +10,11 @@ from monai.transforms import (
     AddChanneld, Compose, LoadImaged, RandCropByPosNegLabeld,
     Spacingd, ToTensord, NormalizeIntensityd, RandFlipd,
     RandRotate90d, RandShiftIntensityd, RandAffined, RandSpatialCropd,
-    RandScaleIntensityd, RandSpatialCropSamplesd)
+    RandScaleIntensityd, RandSpatialCropSamplesd,ConcatItemsd)
 from scipy import ndimage
 
 
-def get_train_transforms():
+def get_train_transforms(I=['FLAIR']):
     """ Get transforms for training on FLAIR images and ground truth:
     - Loads 3D images from Nifti file
     - Adds channel dimention
@@ -23,29 +23,31 @@ def get_train_transforms():
     - Crops out 32 patches of shape [96, 96, 96] that contain lesions
     - Converts to torch.Tensor()
     """
+
     transform = Compose(
         [
-            LoadImaged(keys=["image", "label"]),
-            AddChanneld(keys=["image", "label"]),
-            NormalizeIntensityd(keys=["image"], nonzero=True),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            RandCropByPosNegLabeld(keys=["image", "label"],
-                                   label_key="label", image_key="image",
+            LoadImaged(keys=I+["label"]),
+            AddChanneld(keys=I+["label"]),
+            NormalizeIntensityd(keys=I, nonzero=True),
+            RandShiftIntensityd(keys=I, offsets=0.1, prob=1.0),
+            RandScaleIntensityd(keys=I, factors=0.1, prob=1.0),
+            RandCropByPosNegLabeld(keys=I+["label"],
+                                   label_key="label", image_key=I[0],
                                    spatial_size=(128, 128, 128), num_samples=32,
                                    pos=4, neg=1),
-            RandSpatialCropd(keys=["image", "label"],
+            RandSpatialCropd(keys=I+["label"],
                              roi_size=(96, 96, 96),
                              random_center=True, random_size=False),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=(0, 1, 2)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 1)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(1, 2)),
-            RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 2)),
-            RandAffined(keys=['image', 'label'], mode=('bilinear', 'nearest'),
+            RandFlipd(keys=I+["label"], prob=0.5, spatial_axis=(0, 1, 2)),
+            RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 1)),
+            RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(1, 2)),
+            RandRotate90d(keys=I+["label"], prob=0.5, spatial_axes=(0, 2)),
+            RandAffined(keys=I+['label'], mode=('bilinear', 'nearest'),
                         prob=1.0, spatial_size=(96, 96, 96),
                         rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
                         scale_range=(0.1, 0.1, 0.1), padding_mode='border'),
-            ToTensord(keys=["image", "label"]),
+            ToTensord(keys=I+["label"]),
+            ConcatItemsd(keys=I, name="image", dim=0)
         ]
     )
     # transform.set_random_state(seed=seed)
@@ -53,7 +55,7 @@ def get_train_transforms():
     return transform
 
 
-def get_ssl_transforms():
+def get_ssl_transforms(I=['FLAIR']):
     """ Get transforms for training on FLAIR images :
     - Loads 3D images from Nifti file
     - Adds channel dimention
@@ -64,24 +66,25 @@ def get_ssl_transforms():
     """
     transform = Compose(
         [
-            LoadImaged(keys=["image"]),
-            AddChanneld(keys=["image"]),
-            NormalizeIntensityd(keys=["image"], nonzero=True),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            RandSpatialCropSamplesd(keys=["image"],
+            LoadImaged(keys=I),
+            AddChanneld(keys=I),
+            NormalizeIntensityd(keys=I, nonzero=True),
+            RandShiftIntensityd(keys=I, offsets=0.1, prob=1.0),
+            RandScaleIntensityd(keys=I, factors=0.1, prob=1.0),
+            RandSpatialCropSamplesd(keys=I,
                                     num_samples=32,
                                     roi_size=(96, 96, 96),
                                     random_center=True, random_size=False),
-            RandFlipd(keys=["image"], prob=0.5, spatial_axis=(0, 1, 2)),
-            RandRotate90d(keys=["image"], prob=0.5, spatial_axes=(0, 1)),
-            RandRotate90d(keys=["image"], prob=0.5, spatial_axes=(1, 2)),
-            RandRotate90d(keys=["image"], prob=0.5, spatial_axes=(0, 2)),
-            RandAffined(keys=['image'], mode=('bilinear'),
+            RandFlipd(keys=I, prob=0.5, spatial_axis=(0, 1, 2)),
+            RandRotate90d(keys=I, prob=0.5, spatial_axes=(0, 1)),
+            RandRotate90d(keys=I, prob=0.5, spatial_axes=(1, 2)),
+            RandRotate90d(keys=I, prob=0.5, spatial_axes=(0, 2)),
+            RandAffined(keys=I, mode=('bilinear'),
                         prob=1.0, spatial_size=(96, 96, 96),
                         rotate_range=(np.pi / 12, np.pi / 12, np.pi / 12),
                         scale_range=(0.1, 0.1, 0.1), padding_mode='border'),
-            ToTensord(keys=["image"]),
+            ToTensord(keys=I),
+            ConcatItemsd(keys=I, name="image", dim=0)
         ]
     )
     # transform.set_random_state(seed=seed)
@@ -89,7 +92,7 @@ def get_ssl_transforms():
     return transform
 
 
-def get_val_transforms(keys=["image", "label"], image_keys=["image"]):
+def get_val_transforms(I=['FLAIR']): #keys=["image", "label"], image_keys=["image"]):
     """ Get transforms for testing on FLAIR images and ground truth:
     - Loads 3D images and masks from Nifti file
     - Adds channel dimention
@@ -98,10 +101,10 @@ def get_val_transforms(keys=["image", "label"], image_keys=["image"]):
     """
     return Compose(
         [
-            LoadImaged(keys=keys),
-            AddChanneld(keys=keys),
-            NormalizeIntensityd(keys=image_keys, nonzero=True),
-            ToTensord(keys=keys),
+            LoadImaged(keys=I+["label"]),
+            AddChanneld(keys=I+["label"]),
+            NormalizeIntensityd(keys=I, nonzero=True),
+            ToTensord(keys=I+["label"]),
         ]
     )
 
@@ -116,42 +119,46 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
       num_workers:  `int`,  number of worker threads to use for parallel processing
                     of images
       cache_rate:  `float` in (0.0, 1.0], percentage of cached data in total.
-      I: `list`, list of modalities to include in the data loader.
+      modalities: `list`, list of modalities to include in the data loader.
     Returns:
       monai.data.DataLoader() class object.
     """
     # Collect all modality images sorted
-    images = []
+    all_modality_images = {}
     assert isinstance(scan_paths, list), "scan_paths must be a list"
     for modality in I:
         modality_images = []
         for scan_path in scan_paths:
             modality_path = os.path.join(scan_path, modality.lower())
             modality_images += sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-        images.append(modality_images)
+        all_modality_images[modality] = modality_images
 
     # Check all modalities have same length
-    assert all(len(x) == len(images[0]) for x in images), "All modalities must have the same number of images"
+    assert all(len(x) == len(all_modality_images[I[0]]) for x in all_modality_images.values()), "All modalities must have the same number of images"
 
     # Collect all corresponding ground truths
     segs = []
-    print(gts_paths)
     if isinstance(gts_paths, list):
         for path in gts_paths:
             segs += sorted(glob(os.path.join(path, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
     elif gts_paths is not None:
         segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
 
-    print(len(images[0]), len(segs))
-    assert len(images[0]) == len(segs), "Number of multi-modal images and ground truths must be the same"
-    files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
+    assert len(all_modality_images[I[0]]) == len(segs), "Number of multi-modal images and ground truths must be the same"
+
+    files = []
+    for i in range(len(segs)):
+        file_dict = {"label": segs[i]}
+        for modality in I:
+            file_dict[modality] = all_modality_images[modality][i]
+        files.append(file_dict)
 
     print("Number of training files:", len(files))
 
-    train_transforms = get_train_transforms()
-    train_transforms.set_random_state(seed)
+    train_transforms = get_train_transforms(I)
     ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=True,  num_workers=num_workers)
+
 
 
 def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_paths=None, I=['FLAIR']):
@@ -167,22 +174,22 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
       cache_rate:  `float` in (0.0, 1.0], percentage of cached data in total.
       bm_path:   `None|str`. If `str`, then defines path to directory with
                  brain masks. If `None`, dataloader does not return brain masks.
-      I: `list`, list of modalities to include in the data loader.
+      I: `list`, list of I to include in the data loader.
     Returns:
       monai.data.DataLoader() class object.
     """
     # Collect all modality images sorted
-    images = []
+    all_modality_images = {}
     assert isinstance(scan_paths, list), "scan_paths must be a list"
     for modality in I:
         modality_images = []
         for scan_path in scan_paths:
             modality_path = os.path.join(scan_path, modality.lower())
             modality_images += sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-        images.append(modality_images)
+        all_modality_images[modality] = modality_images
 
     # Check all modalities have same length
-    assert all(len(x) == len(images[0]) for x in images), "All modalities must have the same number of images"
+    assert all(len(x) == len(all_modality_images[I[0]]) for x in all_modality_images.values()), "All I must have the same number of images"
 
     segs = []
     if isinstance(gts_paths, list):
@@ -199,25 +206,33 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
         else:
             bms = sorted(glob(os.path.join(bm_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
 
-        assert len(images[0]) == len(segs) == len(bms), f"Some files must be missing: {[len(images[0]), len(segs), len(bms)]}"
+        assert len(all_modality_images[I[0]]) == len(segs) == len(bms), f"Some files must be missing: {[len(all_modality_images[I[0]]), len(segs), len(bms)]}"
 
-        files = [
-            {"image": img, "label": seg, "brain_mask": bm} for img, seg, bm
-            in zip(zip(*images), segs, bms)
-        ]
+        files = []
+        for i in range(len(segs)):
+            file_dict = {"label": segs[i], "brain_mask": bms[i]}
+            for modality in I:
+                file_dict[modality] = all_modality_images[modality][i]
+            files.append(file_dict)
 
-        val_transforms = get_val_transforms(keys=["image", "label", "brain_mask"])
+        val_transforms = get_val_transforms(keys=I + ["label", "brain_mask"])
     else:
-        assert len(images[0]) == len(segs), f"Some files must be missing: {[len(images[0]), len(segs)]}"
+        assert len(all_modality_images[I[0]]) == len(segs), f"Some files must be missing: {[len(all_modality_images[I[0]]), len(segs)]}"
 
-        files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
+        files = []
+        for i in range(len(segs)):
+            file_dict = {"label": segs[i]}
+            for modality in I:
+                file_dict[modality] = all_modality_images[modality][i]
+            files.append(file_dict)
 
-        val_transforms = get_val_transforms()
+        val_transforms = get_val_transforms(I)
 
     print("Number of validation files:", len(files))
 
     ds = CacheDataset(data=files, transform=val_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=False, num_workers=num_workers)
+
 
 
 
