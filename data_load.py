@@ -105,6 +105,7 @@ def get_val_transforms(I=['FLAIR']): #keys=["image", "label"], image_keys=["imag
             AddChanneld(keys=I+["label"]),
             NormalizeIntensityd(keys=I, nonzero=True),
             ToTensord(keys=I+["label"]),
+            ConcatItemsd(keys=I, name="image", dim=0)
         ]
     )
 
