@@ -110,7 +110,7 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
     """
     Get dataloader for training
     Args:
-      scan_paths: `str`, path to directory with different modality images from Train set.
+      scan_paths: `list`, list of paths to directories with different modality images.
       gts_path:  `str`, path to directory with ground truth lesion segmentation
                     binary masks images from Train set.
       num_workers:  `int`,  number of worker threads to use for parallel processing
@@ -122,16 +122,12 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
     """
     # Collect all modality images sorted
     images = []
-    # assert type(scan_paths) == type(gts_paths), "scan_paths and gts_paths must be of the same type"
+    assert isinstance(scan_paths, list), "scan_paths must be a list"
     for modality in I:
         modality_images = []
-        modality_path = os.path.join(scan_paths, modality.lower())
-        if isinstance(scan_paths, list):
-            for path in modality_path:
-                modality_images += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-        else:
-            modality_images = sorted(glob(os.path.join(modality_path, "*.nii.gz")),
-                                     key=lambda i: int(re.sub('\D', '', i)))
+        for scan_path in scan_paths:
+            modality_path = os.path.join(scan_path, modality.lower())
+            modality_images += sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
         images.append(modality_images)
 
     # Check all modalities have same length
@@ -141,23 +137,20 @@ def get_train_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, see
     segs = []
     if isinstance(gts_paths, list):
         for path in gts_paths:
-            segs += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+            segs += sorted(glob(os.path.join(path, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
     elif gts_paths is not None:
-        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
 
-    if gts_paths is None:
-        files = [{"image": img} for img in zip(*images)]
-    else:
-        print(len(images[0]), len(segs))
-        assert len(images[0]) == len(segs), "Number of images and ground truths must be the same"
-        files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
+    print(len(images[0]), len(segs))
+    assert len(images[0]) == len(segs), "Number of multi-modal images and ground truths must be the same"
+    files = [{"image": img, "label": seg} for img, seg in zip(zip(*images), segs)]
 
     print("Number of training files:", len(files))
 
     train_transforms = get_train_transforms()
     train_transforms.set_random_state(seed)
     ds = CacheDataset(data=files, transform=train_transforms, cache_rate=cache_rate, num_workers=num_workers)
-    return DataLoader(ds, batch_size=1, shuffle=True, num_workers=num_workers)
+    return DataLoader(ds, batch_size=1, shuffle=True,  num_workers=num_workers)
 
 
 def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_paths=None, I=['FLAIR']):
@@ -165,7 +158,7 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
     Get dataloader for validation and testing. Either with or without brain masks.
 
     Args:
-      scan_paths: `str`, path to directory with different modality images.
+      scan_paths: `list`, list of paths to directories with different modality images.
       gts_path:  `str`, path to directory with ground truth lesion segmentation
                     binary masks images.
       num_workers:  `int`,  number of worker threads to use for parallel processing
@@ -179,27 +172,23 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
     """
     # Collect all modality images sorted
     images = []
-    assert type(scan_paths) == type(gts_paths), "scan_paths and gts_paths must be of the same type"
+    assert isinstance(scan_paths, list), "scan_paths must be a list"
     for modality in I:
         modality_images = []
-        modality_path = os.path.join(scan_paths, modality.lower())
-        if isinstance(scan_paths, list):
-            for path in modality_path:
-                modality_images += sorted(glob(os.path.join(path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
-        else:
-            modality_images = sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+        for scan_path in scan_paths:
+            modality_path = os.path.join(scan_path, modality.lower())
+            modality_images += sorted(glob(os.path.join(modality_path, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
         images.append(modality_images)
 
     # Check all modalities have same length
     assert all(len(x) == len(images[0]) for x in images), "All modalities must have the same number of images"
 
-    # Collect all corresponding ground truths
     segs = []
     if isinstance(gts_paths, list):
         for path in gts_paths:
-            segs += sorted(glob(os.path.join(path, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
-    elif gts_paths is not None:
-        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")),  key=lambda i: int(re.sub('\D', '', i)))
+            segs += sorted(glob(os.path.join(path, "*gt*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
+    else:
+        segs = sorted(glob(os.path.join(gts_paths, "*.nii.gz")), key=lambda i: int(re.sub('\D', '', i)))
 
     if bm_paths is not None:
         bms = []
@@ -228,6 +217,7 @@ def get_val_dataloader(scan_paths, gts_paths, num_workers, cache_rate=0.1, bm_pa
 
     ds = CacheDataset(data=files, transform=val_transforms, cache_rate=cache_rate, num_workers=num_workers)
     return DataLoader(ds, batch_size=1, shuffle=False, num_workers=num_workers)
+
 
 
 
