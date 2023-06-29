@@ -27,7 +27,7 @@ def     get_train_transforms(I=['FLAIR']):
     transform = Compose(
         [
             LoadImaged(keys=I+["label"]),
-            AddChanneld(keys=I+["label"]),
+            #AddChanneld(keys=I+["label"]),
             NormalizeIntensityd(keys=I, nonzero=True),
             RandShiftIntensityd(keys=I, offsets=0.1, prob=1.0),
             RandScaleIntensityd(keys=I, factors=0.1, prob=1.0),
