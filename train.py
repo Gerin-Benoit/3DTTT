@@ -28,6 +28,8 @@ parser.add_argument('--learning_rate', type=float, default=1e-4,
                     help='Specify the initial learning rate')
 parser.add_argument('--n_epochs', type=int, default=300,
                     help='Specify the number of epochs to train for')
+parser.add_argument('--classic_lr', action='store_true', default=False, help='use the constant lr proposed by the '
+                                                                             'original project')
 # initialisation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
 parser.add_argument('--seed', type=int, default=1, help='Specify the global random seed')
 # data
@@ -149,9 +151,11 @@ def main(args):
     loss_function = DiceLoss(to_onehot_y=True,
                              softmax=True, sigmoid=False,
                              include_background=False)
-    optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=0.0005)
-
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.n_epochs, eta_min=1e-6)
+    optimizer = torch.optim.Adam(model.parameters(), 1e-5 if args.classic_lr else args.learning_rate, weight_decay=0.0005)  # wd = 0.0005
+    if args.classic_lr:
+        lr_scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1, total_iters=args.n_epochs)
+    else:
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.n_epochs, eta_min=1e-6)
 
     act = nn.Softmax(dim=1)
 
